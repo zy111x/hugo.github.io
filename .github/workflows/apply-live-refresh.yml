@@ -1,0 +1,54 @@
+name: apply live refresh
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - refresh.css
+      - .github/workflows/apply-live-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inject-stylesheet:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout generated site
+        uses: actions/checkout@v7.0.1
+
+      - name: Inject refresh stylesheet into generated pages
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          marker = '<link rel="stylesheet" href="/refresh.css">'
+          changed = 0
+
+          for path in Path('.').rglob('*.html'):
+              text = path.read_text(encoding='utf-8')
+              if marker in text or '</head>' not in text:
+                  continue
+              text = text.replace('</head>', f'{marker}\n</head>', 1)
+              path.write_text(text, encoding='utf-8')
+              changed += 1
+
+          print(f'Injected refresh stylesheet into {changed} HTML files')
+          PY
+
+      - name: Commit generated-page patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated HTML changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '*.html'
+          git commit -m "chore: apply transitional live refresh"
+          git push
