@@ -1,0 +1,62 @@
+name: publish no-cover hugo-stack artifact
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-no-covers.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ARTIFACT_URL: 'https://sdmntprindiasocentral.oaiusercontent.com/files/00000000-bab0-8211-92d7-ba72a3383277/raw?se=2026-09-05T07%3A35%3A24Z&sp=r&sv=2026-02-06&sr=b&scid=d8ae39f2-239e-586b-9d5c-91243d29b29b&skoid=0765b554-4b90-4fa2-9d6d-0055a2427910&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-04T23%3A13%3A33Z&ske=2026-09-05T23%3A13%3A33Z&sks=b&skv=2026-02-06&sig=R4XR1tUK/50RQ7SaJ7tZv6htE5FNUY/ZmltV2lfuT90%3D'
+      ARTIFACT_SHA256: '8ba6e1edb4081bba2bac70d47b743870c2d8684373ee137f3d1fd52a17235959'
+
+    steps:
+      - name: Checkout generated site
+        uses: actions/checkout@v7.0.1
+
+      - name: Download and validate Hugo artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 "$ARTIFACT_URL" --output /tmp/hugo-public.zip
+          echo "$ARTIFACT_SHA256  /tmp/hugo-public.zip" | sha256sum --check -
+          rm -rf /tmp/hugo-public
+          mkdir -p /tmp/hugo-public
+          unzip -q /tmp/hugo-public.zip -d /tmp/hugo-public
+          grep -q 'Hugo 0.165.0' /tmp/hugo-public/index.html
+          test -s /tmp/hugo-public/robots.txt
+          test -s /tmp/hugo-public/css/refresh.css
+          if grep -q 'article-image' /tmp/hugo-public/index.html; then
+            echo 'Homepage still contains article cover markup' >&2
+            exit 1
+          fi
+          if grep -R -q '883188.webp\|769011.webp\|875428.webp' /tmp/hugo-public; then
+            echo 'A disabled published cover URL is still present' >&2
+            exit 1
+          fi
+
+      - name: Replace generated output
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/hugo-public/. .
+          touch .nojekyll
+
+      - name: Commit generated output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "deploy: sync hugo-stack@4406ff1e without covers"
+          git push
