@@ -1,0 +1,54 @@
+name: publish Stack v4 artifact
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-stack-v4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ARTIFACT_URL: "https://sdmntprindiasocentral.oaiusercontent.com/files/00000000-bf44-8211-a59b-7a6dc0f5ab3f/raw?se=2026-09-05T07%3A11%3A12Z&sp=r&sv=2026-02-06&sr=b&scid=dba3b679-1352-5c07-9a83-55b1146abf03&skoid=0765b554-4b90-4fa2-9d6d-0055a2427910&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-05T00%3A15%3A18Z&ske=2026-09-06T00%3A15%3A18Z&sks=b&skv=2026-02-06&sig=4IwI3R0Cvzc4T%2BA3QY4t3HvAiwvbrqkqcnT40IprsdI%3D"
+      ARTIFACT_SHA256: "3ad35ce3b4d1cd7ff1cae62b99643fc909df16773ddbed4f257befb52b6028cb"
+
+    steps:
+      - name: Checkout generated site
+        uses: actions/checkout@v7.0.1
+
+      - name: Download validated Hugo artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 "$ARTIFACT_URL" --output /tmp/hugo-public.zip
+          echo "$ARTIFACT_SHA256  /tmp/hugo-public.zip" | sha256sum --check -
+          rm -rf /tmp/hugo-public
+          mkdir -p /tmp/hugo-public
+          unzip -q /tmp/hugo-public.zip -d /tmp/hugo-public
+          grep -q 'Hugo 0.165.0' /tmp/hugo-public/index.html
+          test -f /tmp/hugo-public/css/refresh.css
+          test -f /tmp/hugo-public/scss/style.min.69485a61004d48369c44f02d19ceeff7329d07990d924866b8ed09d933acd63c.css
+
+      - name: Replace legacy generated output
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/hugo-public/. .
+          touch .nojekyll
+
+      - name: Commit Stack v4 production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "deploy: publish hugo-stack Stack v4 output"
+          git push
